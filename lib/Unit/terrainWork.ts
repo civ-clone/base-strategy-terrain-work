@@ -18,7 +18,7 @@ import Unit from '@civ-clone/core-unit/Unit';
 import { noOrders } from '@civ-clone/base-strategy-ai/lib/Unit/orders';
 import reachableTiles from '@civ-clone/base-strategy-ai/lib/Unit/reachable';
 
-export type TerrainImprovement = 'irrigation' | 'mine' | 'road';
+export type TerrainImprovement = 'irrigation' | 'mine' | 'railroad' | 'road';
 
 // What doing `improvement` to a tile would be worth, by the ruleset: `value` each turn once it's done, for the
 //  `turns` of a worker's work it takes.
@@ -49,6 +49,7 @@ export interface TerrainJob {
 const actionFor: { [K in TerrainImprovement]: keyof ActionLookup } = {
   irrigation: 'buildIrrigation',
   mine: 'buildMine',
+  railroad: 'buildRailroad',
   road: 'buildRoad',
 };
 
