@@ -1,6 +1,6 @@
 {
   "name": "@civ-clone/base-strategy-terrain-work",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Workers improving the terrain around a player's cities, as the computer players do it and as a standing order for a player's unit.",
   "main": "index.js",
   "repository": "git@github.com:civ-clone/base-strategy-terrain-work.git",
