@@ -1,5 +1,11 @@
 import { Settlers, Warrior } from '@civ-clone/civ1-unit/Units';
-import { TerrainPolicy, terrainJobs } from '../lib/Unit/terrainWork';
+import { Irrigation, Mine } from '@civ-clone/civ1-world/TileImprovements';
+import {
+  TerrainPolicy,
+  isKnownUndoable,
+  rememberUndoableJob,
+  terrainJobs,
+} from '../lib/Unit/terrainWork';
 import testGame, { TestGame, knowledge } from './lib/testGame';
 import City from '@civ-clone/core-city/City';
 import Effect from '@civ-clone/core-rule/Effect';
@@ -23,10 +29,10 @@ const roadOn = (x: number, y: number): TerrainPolicy => ({
   workersWanted: () => 0,
 });
 
-const setUp = async (): Promise<
-  TestGame & { player: Player; settlers: Settlers }
-> => {
-  const setup = await testGame('49G', 7, 7),
+const setUp = async (
+  map: string = '49G'
+): Promise<TestGame & { player: Player; settlers: Settlers }> => {
+  const setup = await testGame(map, 7, 7),
     player = setup.addPlayer();
 
   // A city's tiles are the ruleset's: here, everything within two tiles.
@@ -164,5 +170,81 @@ describe('TerrainWork', (): void => {
         new PlayerAction(player, addUnit(Warrior, player, 5, 5))
       )
     ).false;
+  });
+  it('should do a job by the action the policy names for it', async (): Promise<void> => {
+    // A Swamp on 1,3, where the Settlers stand.
+    const { dependencies, player, settlers } = await setUp('22GS26G'),
+      terrainWork = new TerrainWork(
+        dependencies,
+        knowledge,
+        {
+          jobs: (dependencies, player, tile) =>
+            tile.x() === 1 && tile.y() === 3
+              ? [
+                  {
+                    improvement: 'clearSwamp',
+                    action: 'clearSwamp',
+                    value: 10,
+                    turns: 14,
+                  },
+                ]
+              : [],
+          workersWanted: () => 0,
+        },
+        (): Promise<void> => Promise.resolve()
+      );
+
+    expect(terrainWork.order(new UnitOrder(player, settlers))).true;
+    expect(settlers.busy()?.constructor.name).to.equal('ClearingSwamp');
+    expect(
+      terrainJobs(memoryRegistryInstance.memoryFor(player)).get(settlers)
+    ).to.include({ improvement: 'clearSwamp', action: 'clearSwamp' });
+  });
+
+  it('should send a worker only to the tiles the policy names, when it names them', async (): Promise<void> => {
+    const { dependencies, player, settlers, world } = await setUp(),
+      // 6,0 is outside the city's tiles.
+      policy = roadOn(6, 0);
+
+    expect(
+      new TerrainWork(
+        dependencies,
+        knowledge,
+        policy,
+        (): Promise<void> => Promise.resolve()
+      ).order(new UnitOrder(player, settlers))
+    ).false;
+
+    expect(
+      new TerrainWork(
+        dependencies,
+        knowledge,
+        { ...policy, tiles: () => [world.get(6, 0)] },
+        (): Promise<void> => Promise.resolve()
+      ).order(new UnitOrder(player, settlers))
+    ).true;
+    expect(
+      at(
+        terrainJobs(memoryRegistryInstance.memoryFor(player)).get(settlers)!
+          .tile
+      )
+    ).to.equal('6,0');
+  });
+
+  it('should forget a job it had no action for when a neighbour’s improvement is replaced by another', async (): Promise<void> => {
+    const { dependencies, game, player, world } = await setUp(),
+      memory = memoryRegistryInstance.memoryFor(player),
+      job = { improvement: 'irrigation', tile: world.get(1, 1) },
+      mine = new Mine(world.get(1, 0));
+
+    game.tileImprovements.register(mine);
+    rememberUndoableJob(dependencies, player, memory, job);
+
+    expect(isKnownUndoable(dependencies, player, memory, job)).true;
+
+    game.tileImprovements.unregister(mine);
+    game.tileImprovements.register(new Irrigation(world.get(1, 0)));
+
+    expect(isKnownUndoable(dependencies, player, memory, job)).false;
   });
 });
