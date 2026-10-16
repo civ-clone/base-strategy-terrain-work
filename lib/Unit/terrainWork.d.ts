@@ -4,9 +4,10 @@ import Dependencies from '@civ-clone/base-strategy-ai/lib/Dependencies';
 import Player from '@civ-clone/core-player/Player';
 import Tile from '@civ-clone/core-world/Tile';
 import Unit from '@civ-clone/core-unit/Unit';
-export type TerrainImprovement = 'irrigation' | 'mine' | 'railroad' | 'road';
+export type TerrainImprovement = string;
 export interface TerrainJobValue {
   improvement: TerrainImprovement;
+  action?: keyof ActionLookup;
   value: number;
   turns: number;
 }
@@ -17,9 +18,11 @@ export interface TerrainPolicy {
     tile: Tile
   ): TerrainJobValue[];
   workersWanted(dependencies: Dependencies, player: Player): number;
+  tiles?(dependencies: Dependencies, player: Player): Tile[];
 }
 export interface TerrainJob {
   improvement: TerrainImprovement;
+  action?: keyof ActionLookup;
   tile: Tile;
 }
 export declare const PATH_TRIES = 3;

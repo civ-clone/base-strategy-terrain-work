@@ -18,12 +18,17 @@ import Unit from '@civ-clone/core-unit/Unit';
 import { noOrders } from '@civ-clone/base-strategy-ai/lib/Unit/orders';
 import reachableTiles from '@civ-clone/base-strategy-ai/lib/Unit/reachable';
 
-export type TerrainImprovement = 'irrigation' | 'mine' | 'railroad' | 'road';
+// A job's name. The ruleset names its own: an improvement (`irrigation`, `mine`, `railroad`, `road`, which need no
+//  `action`) or anything else a worker can do to a tile, such as changing its terrain (civ-clone/web-renderer#353),
+//  given with the action it takes.
+export type TerrainImprovement = string;
 
 // What doing `improvement` to a tile would be worth, by the ruleset: `value` each turn once it's done, for the
-//  `turns` of a worker's work it takes.
+//  `turns` of a worker's work it takes. `action` is the worker's action for it, by its `ActionLookup` name
+//  (`clearSwamp`, say); the four improvements above have theirs already.
 export interface TerrainJobValue {
   improvement: TerrainImprovement;
+  action?: keyof ActionLookup;
   value: number;
   turns: number;
 }
@@ -39,19 +44,39 @@ export interface TerrainPolicy {
   ): TerrainJobValue[];
   // How many of the player's workers to keep on terrain jobs even while there are city sites for them to settle.
   workersWanted(dependencies: Dependencies, player: Player): number;
+  // The tiles a worker may be sent to: the tiles of the player's cities if the ruleset doesn't say. A job that leads to
+  //  a better one can be on a tile no city works (civ-clone/web-renderer#426).
+  tiles?(dependencies: Dependencies, player: Player): Tile[];
 }
 
 export interface TerrainJob {
   improvement: TerrainImprovement;
+  action?: keyof ActionLookup;
   tile: Tile;
 }
 
-const actionFor: { [K in TerrainImprovement]: keyof ActionLookup } = {
+const actionFor: { [improvement: string]: keyof ActionLookup } = {
   irrigation: 'buildIrrigation',
   mine: 'buildMine',
   railroad: 'buildRailroad',
   road: 'buildRoad',
 };
+
+// The worker's action for `job`, by its `ActionLookup` name.
+const actionOf = ({ action, improvement }: TerrainJob): keyof ActionLookup =>
+  action ?? actionFor[improvement] ?? improvement;
+
+// The tiles a worker may be sent to, by `policy`.
+const candidateTiles = (
+  dependencies: Dependencies,
+  player: Player,
+  policy: TerrainPolicy
+): Tile[] =>
+  policy.tiles
+    ? policy.tiles(dependencies, player)
+    : dependencies.cityRegistry
+        .getByPlayer(player)
+        .flatMap((city: City): Tile[] => city.tiles().entries());
 
 // Each player's workers' jobs, kept beside its memory.
 const jobsByMemory: WeakMap<Memory, Map<Unit, TerrainJob>> = new WeakMap();
@@ -133,19 +158,27 @@ const undoableJobsFor = (
   return undoable;
 };
 
-// What a job's doability could depend on, whatever the ruleset, as a key that changes when any of it does: the
-//  improvements on the tile and the tiles around it (irrigation from an irrigated neighbour, say) and the advances the
-//  player has (roads on Rivers with Bridge Building, say). Anything else is caught by `UNDOABLE_TURNS`.
+// What a job's doability could depend on, whatever the ruleset, as a key that changes when any of it does: the terrain
+//  and the improvements on the tile and the tiles around it (irrigation from an irrigated neighbour, say, or from a
+//  Forest cleared to Plains), each by kind, so that one improvement replacing another counts as a change
+//  (civ-clone/web-renderer#255), and the advances the player has (roads on Rivers with Bridge Building, say). Anything
+//  else is caught by `UNDOABLE_TURNS`.
 const jobCircumstances = (
   dependencies: Dependencies,
   player: Player,
   tile: Tile
 ): string => {
-  const improvements = [tile, ...tile.getNeighbours()].reduce(
-      (total: number, tile: Tile): number =>
-        total + dependencies.tileImprovementRegistry.getByTile(tile).length,
-      0
-    ),
+  const surroundings = [tile, ...tile.getNeighbours()]
+      .map((tile: Tile): string =>
+        [
+          tile.terrain().constructor.name,
+          ...dependencies.tileImprovementRegistry
+            .getByTile(tile)
+            .map((improvement): string => improvement.constructor.name)
+            .sort(),
+        ].join('+')
+      )
+      .join(','),
     advances = dependencies.playerResearchRegistry
       .getBy('player', player)
       .reduce(
@@ -154,7 +187,7 @@ const jobCircumstances = (
         0
       );
 
-  return `${improvements}:${advances}`;
+  return `${surroundings}:${advances}`;
 };
 
 // Notes that a worker of the player's has no action for `improvement` on `tile`.
@@ -259,11 +292,7 @@ export const chooseTerrainJob = (
         .filter(([other]): boolean => other !== unit)
         .map(([, job]): Tile => job.tile),
     ]),
-    tiles = new Set<Tile>(
-      dependencies.cityRegistry
-        .getByPlayer(player)
-        .flatMap((city: City): Tile[] => city.tiles().entries())
-    ),
+    tiles = new Set<Tile>(candidateTiles(dependencies, player, policy)),
     // `unit.actions` creates `Action`s, so each tile is asked about once at most.
     possible = new Map<Tile, ActionLookup>(),
     actionsAt = (tile: Tile): ActionLookup => {
@@ -290,10 +319,11 @@ export const chooseTerrainJob = (
         .map(
           ({
             improvement,
+            action,
             value,
             turns,
           }: TerrainJobValue): [TerrainJob, number] => [
-            { improvement, tile },
+            action ? { improvement, action, tile } : { improvement, tile },
             value / (turns + tile.distanceFrom(unit.tile())),
           ]
         )
@@ -302,7 +332,7 @@ export const chooseTerrainJob = (
 
   // Best first, until one the worker could do: each tile is asked about once however many of its jobs are ranked.
   for (const [job] of ranked) {
-    if (actionsAt(job.tile)[actionFor[job.improvement]]) {
+    if (actionsAt(job.tile)[actionOf(job)]) {
       return job;
     }
 
@@ -315,9 +345,9 @@ export const chooseTerrainJob = (
   return null;
 };
 
-// Whether a worker on `reachable` tiles would find a terrain job no unit of the player's has claimed, by the policy:
-//  for production, whether a worker built now would have something to do (`lib/Civ1/buildItemInCity`). It can't ask
-//  whether a worker could do the job there, as `chooseTerrainJob` does, which takes a unit with moves left, so it
+// Whether a worker on `reachable` tiles would find a terrain job no unit of the player's has claimed, by the policy, on
+//  the tiles it names (`TerrainPolicy#tiles`): for production, whether a worker built now would have something to do
+//  (`lib/Civ1/buildItemInCity`). It can't ask whether a worker could do the job there, as `chooseTerrainJob` does, which takes a unit with moves left, so it
 //  leaves out the jobs the player's workers have found they have no action for (`isKnownUndoable`).
 export const hasOpenTerrainJob = (
   dependencies: Dependencies,
@@ -332,27 +362,20 @@ export const hasOpenTerrainJob = (
     claimed.add(job.tile);
   });
 
-  return dependencies.cityRegistry
-    .getByPlayer(player)
-    .some((city: City): boolean =>
-      city
-        .tiles()
-        .entries()
-        .some(
-          (tile: Tile): boolean =>
-            reachable.has(tile) &&
-            !claimed.has(tile) &&
-            dependencies.cityRegistry.getByTile(tile) === null &&
-            policy.jobs(dependencies, player, tile).some(
-              ({ improvement, value }: TerrainJobValue): boolean =>
-                value > 0 &&
-                !isKnownUndoable(dependencies, player, memory, {
-                  improvement,
-                  tile,
-                })
-            )
-        )
-    );
+  return candidateTiles(dependencies, player, policy).some(
+    (tile: Tile): boolean =>
+      reachable.has(tile) &&
+      !claimed.has(tile) &&
+      dependencies.cityRegistry.getByTile(tile) === null &&
+      policy.jobs(dependencies, player, tile).some(
+        ({ improvement, value }: TerrainJobValue): boolean =>
+          value > 0 &&
+          !isKnownUndoable(dependencies, player, memory, {
+            improvement,
+            tile,
+          })
+      )
+  );
 };
 
 // Forgets `unit`'s job, and the path to it, so nothing sends the unit on to a job it no longer has.
@@ -377,7 +400,7 @@ const startJob = (
   job: TerrainJob,
   actions: ActionLookup
 ): boolean => {
-  const action = actions[actionFor[job.improvement]];
+  const action = actions[actionOf(job)];
 
   if (unit.tile() !== job.tile || !action) {
     return false;
