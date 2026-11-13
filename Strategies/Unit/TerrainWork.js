@@ -11,7 +11,8 @@ exports.TerrainWork = void 0;
 //  terrain job as a standing order (`UnitOrder`): it never settles, and walks there peacefully (`followPath`).
 const terrainWork_1 = require("../../lib/Unit/terrainWork");
 const AIStrategy_1 = require("@civ-clone/base-strategy-ai/Strategies/lib/AIStrategy");
-const Worker_1 = require("@civ-clone/base-unit-type-worker/Worker");
+const Terraforms_1 = require("@civ-clone/base-unit-trait-terraforms/Terraforms");
+const Unit_1 = require("@civ-clone/core-unit/Unit");
 const enemyAdjacent_1 = require("@civ-clone/base-strategy-ai/lib/Unit/enemyAdjacent");
 const followPath_1 = require("@civ-clone/base-strategy-ai/lib/Unit/followPath");
 const actionLookup_1 = require("@civ-clone/base-strategy-ai/lib/actionLookup");
@@ -23,8 +24,10 @@ class TerrainWork extends AIStrategy_1.default {
         this._policy = policy;
         this._travel = travel;
     }
+    // A unit that `Terraforms`.
     handles(action) {
-        return action.value() instanceof Worker_1.default;
+        const value = action.value();
+        return value instanceof Unit_1.default && value.hasTrait(Terraforms_1.default);
     }
     async attempt(action) {
         const player = action.player(), unit = action.value(), memory = this.memoryFor(player), jobs = (0, terrainWork_1.terrainJobs)(memory), { actions, target, tile } = (0, unitTurnContextFor_1.default)(this.dependencies(), action);

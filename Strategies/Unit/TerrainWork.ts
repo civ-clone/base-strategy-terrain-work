@@ -20,10 +20,10 @@ import Memory from '@civ-clone/base-strategy-ai/lib/Memory';
 import { OrderStrategy } from '@civ-clone/base-strategy-ai/Strategies/lib/OrderStrategy';
 import Player from '@civ-clone/core-player/Player';
 import PlayerAction from '@civ-clone/core-player/PlayerAction';
+import Terraforms from '@civ-clone/base-unit-trait-terraforms/Terraforms';
 import Tile from '@civ-clone/core-world/Tile';
 import Unit from '@civ-clone/core-unit/Unit';
 import UnitOrder from '@civ-clone/base-strategy-ai/PlayerActions/UnitOrder';
-import Worker from '@civ-clone/base-unit-type-worker/Worker';
 import enemyAdjacent from '@civ-clone/base-strategy-ai/lib/Unit/enemyAdjacent';
 import followPath from '@civ-clone/base-strategy-ai/lib/Unit/followPath';
 import { lookupActions } from '@civ-clone/base-strategy-ai/lib/actionLookup';
@@ -56,8 +56,11 @@ export class TerrainWork extends AIStrategy implements OrderStrategy {
     this._travel = travel;
   }
 
+  // A unit that `Terraforms`.
   handles(action: PlayerAction): boolean {
-    return action.value() instanceof Worker;
+    const value = action.value();
+
+    return value instanceof Unit && value.hasTrait(Terraforms);
   }
 
   async attempt(action: PlayerAction<Unit>): Promise<boolean> {
