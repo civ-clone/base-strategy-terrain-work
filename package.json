@@ -19,6 +19,7 @@
     "ts:compile": "tsc --build tsconfig.json"
   },
   "devDependencies": {
+    "@civ-clone/base-unit-type-worker": "^0.1.0",
     "@civ-clone/civ1-unit": "github:civ-clone/civ1-unit",
     "@civ-clone/civ1-world": "github:civ-clone/civ1-world",
     "@civ-clone/core-game": "^0.1.1",
@@ -37,11 +38,11 @@
   },
   "dependencies": {
     "@civ-clone/base-strategy-ai": "^0.1.0",
-    "@civ-clone/base-unit-type-worker": "^0.1.0",
+    "@civ-clone/base-unit-trait-terraforms": "^0.1.0",
     "@civ-clone/core-city": "^0.1.0",
     "@civ-clone/core-player": "^0.1.0",
     "@civ-clone/core-science": "^0.1.0",
-    "@civ-clone/core-unit": "^0.1.0",
+    "@civ-clone/core-unit": "^0.1.31",
     "@civ-clone/core-world": "^0.1.0",
     "@civ-clone/core-world-path": "^0.1.0"
   }
